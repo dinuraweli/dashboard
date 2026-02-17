@@ -431,9 +431,9 @@ def display_security_history(df, history_db):
                     fig_pl.update_layout(height=300)
                     st.plotly_chart(fig_pl, use_container_width=True)
                 
-                # Show data table
-                with st.expander("View Historical Data"):
-                    st.dataframe(sec_history, use_container_width=True)
+                # Show data table - FIXED: Removed nested expander
+                st.markdown("**📋 Historical Data Table**")
+                st.dataframe(sec_history, use_container_width=True)
             else:
                 st.info(f"No history yet for {selected_security}")
     else:
