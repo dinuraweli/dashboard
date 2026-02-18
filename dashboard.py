@@ -12,7 +12,7 @@ import os
 
 st.set_page_config(page_title="Portfolio Dashboard", page_icon="📊", layout="wide")
 
-st.title("📊 Investment Portfolio Dashboard")
+st.title("Investment Portfolio Dashboard")
 
 # Initialize session state for history database
 if 'history_db_initialized' not in st.session_state:
@@ -298,11 +298,22 @@ def create_time_series_charts(history_df):
     period_return = latest['total_market_value'] - first['total_market_value']
     period_return_pct = (period_return / first['total_market_value'] * 100) if first['total_market_value'] != 0 else 0
         
-    st.metric("Current Value", f"Rs.{latest['total_market_value']:,.2f}")
-    st.metric("Total Return", f"Rs.{total_return:,.2f}", f"{total_return_pct:.1f}%")
-    st.metric("Period Return", f"Rs.{period_return:,.2f}", f"{period_return_pct:.1f}%")
-    st.metric("Days Tracked", f"{len(history_df)} days")
+    col1, col2, col3, col4, col5= st.columns(5)
 
+    with col1:
+        st.metric("Current Investment", f"Rs.{latest['total_market_value']:,.2f}")
+    
+    with col2:
+        st.metric("Total Return", f"Rs.{total_return:,.2f}", f"{total_return_pct:.1f}%")
+    
+    with col3:
+        st.metric("Period Return", f"Rs.{period_return:,.2f}", f"{period_return_pct:.1f}%")
+    
+    with col4:
+        st.metric("Days Tracked", f"{len(history_df)} days")
+    
+    with col5:
+        st.metric("Days Tracked", f"{total_return_pct:.1f}%")
 
     fig = go.Figure()
         
@@ -598,9 +609,10 @@ if uploaded_file is not None:
             st.write(f"- First 5 rows:")
             st.dataframe(df_raw.head(), use_container_width=True)
         
-        # Process data
+        # Process data - THIS CREATES df
         df = process_portfolio_data(df_raw)
         
+        st.success(f"✅ Successfully processed {len(df)} securities")
         
         # Save snapshot if requested
         if st.session_state.get('save_snapshot', False):
@@ -609,52 +621,306 @@ if uploaded_file is not None:
                 st.session_state.save_snapshot = False
                 st.success("✅ Portfolio snapshot saved to history!")
         
+        # ================================================================
+        # NOW df IS DEFINED, WE CAN USE IT FOR ALL CALCULATIONS
+        # ================================================================
+        
+        # Calculate all metrics once
+        total_cost = df['Total Cost'].sum() if 'Total Cost' in df.columns else 0
+        total_market = df['Market Value'].sum() if 'Market Value' in df.columns else 0
+        total_pl = df['Unrealized Gain / (Loss)'].sum() if 'Unrealized Gain / (Loss)' in df.columns else 0
+        total_return_pct = (total_pl / total_cost * 100) if total_cost != 0 else 0
+        
+        winners = len(df[df['Unrealized Gain / (Loss)'] > 0]) if 'Unrealized Gain / (Loss)' in df.columns else 0
+        losers = len(df[df['Unrealized Gain / (Loss)'] < 0]) if 'Unrealized Gain / (Loss)' in df.columns else 0
+        win_rate = (winners/len(df)*100) if len(df) > 0 else 0
+        
         # Get historical data
         history_df = history_db.get_history(st.session_state.days_to_show)
         
         # ================================================================
-        # HISTORICAL CHARTS SECTION (TOP)
+        # SECTION 1: KPI METRICS COLUMN + INVESTMENT VS MARKET BAR CHART
         # ================================================================
-        st.subheader("📈 Portfolio Performance Over Time")
-        create_time_series_charts(history_df)
+        st.subheader("📊 Portfolio Overview")
+        
+        # Create two columns: 1 for metrics (narrow), 1 for chart (wide)
+        kpi_col, chart_col = st.columns([1, 2])
+        
+        with kpi_col:
+            # Style for KPI cards
+            st.markdown("""
+            <style>
+            .kpi-card {
+                background-color: #f0f2f6;
+                padding: 20px;
+                border-radius: 10px;
+                margin-bottom: 15px;
+                box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
+            }
+            .kpi-label {
+                font-size: 14px;
+                color: #555;
+                margin-bottom: 5px;
+            }
+            .kpi-value {
+                font-size: 24px;
+                font-weight: bold;
+                color: #0e1117;
+            }
+            .kpi-delta {
+                font-size: 14px;
+                margin-top: 5px;
+            }
+            </style>
+            """, unsafe_allow_html=True)
+            
+            # Total Investment
+            st.markdown(f"""
+            <div class="kpi-card">
+                <div class="kpi-label">💰 Total Investment</div>
+                <div class="kpi-value">${total_cost:,.2f}</div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Market Value
+            delta = total_market - total_cost
+            delta_color = "green" if delta > 0 else "red" if delta < 0 else "gray"
+            st.markdown(f"""
+            <div class="kpi-card">
+                <div class="kpi-label">📈 Market Value</div>
+                <div class="kpi-value">${total_market:,.2f}</div>
+                <div class="kpi-delta" style="color: {delta_color};">Δ ${delta:,.2f}</div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Unrealized P/L
+            pl_color = "green" if total_pl > 0 else "red" if total_pl < 0 else "gray"
+            st.markdown(f"""
+            <div class="kpi-card">
+                <div class="kpi-label">💵 Unrealized P/L</div>
+                <div class="kpi-value">${total_pl:,.2f}</div>
+                <div class="kpi-delta" style="color: {pl_color};">{total_return_pct:.1f}%</div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Portfolio Returns
+            st.markdown(f"""
+            <div class="kpi-card">
+                <div class="kpi-label">📊 Portfolio Returns</div>
+                <div class="kpi-value">{total_return_pct:.1f}%</div>
+                <div class="kpi-delta">{winners}W / {losers}L ({win_rate:.1f}% win rate)</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with chart_col:
+            # Investment vs Market Value by Security Bar Chart
+            if 'Security' in df.columns and 'Total Cost' in df.columns and 'Market Value' in df.columns:
+                # Prepare data for grouped bar chart
+                chart_df = df[['Security', 'Total Cost', 'Market Value']].copy()
+                chart_df = chart_df.melt(id_vars=['Security'], 
+                                         value_vars=['Total Cost', 'Market Value'],
+                                         var_name='Type', 
+                                         value_name='Amount')
+                
+                fig_inv_vs_mkt = px.bar(
+                    chart_df,
+                    x='Security',
+                    y='Amount',
+                    color='Type',
+                    barmode='group',
+                    title='Investment vs Market Value by Security',
+                    color_discrete_map={'Total Cost': 'blue', 'Market Value': 'green'},
+                    labels={'Amount': 'Value ($)', 'Security': ''}
+                )
+                fig_inv_vs_mkt.update_layout(height=350, legend=dict(orientation="h", yanchor="bottom", y=1.02))
+                st.plotly_chart(fig_inv_vs_mkt, use_container_width=True)
+
+             # Gains/Loss by Security
+            if 'Unrealized Gain / (Loss)' in df.columns and 'Security' in df.columns:
+                # Sort for better visualization
+                plot_df = df.sort_values('Unrealized Gain / (Loss)', ascending=True)
+                fig_pl = px.bar(
+                    plot_df,
+                    x='Unrealized Gain / (Loss)',
+                    y='Security',
+                    orientation='h',
+                    title='Gains/Loss by Security',
+                    color='Unrealized Gain / (Loss)',
+                    color_continuous_scale=['red', 'lightgray', 'green'],
+                    labels={'Unrealized Gain / (Loss)': 'Gain/Loss ($)'}
+                )
+                fig_pl.update_layout(height=350)
+                st.plotly_chart(fig_pl, use_container_width=True)
+
         
         # ================================================================
-        # CURRENT PORTFOLIO SECTION
+        # SECTION 2: THREE CHARTS IN A ROW
         # ================================================================
+        st.subheader("📈 Portfolio Analytics")
         
-        # Display KPIs
-        st.subheader("📊 Current Portfolio Metrics")
+        col1, col3 = st.columns(2)
         
+        with col1:
+            # Portfolio Allocation by Market Value (Pie Chart)
+            if 'Market Value' in df.columns and 'Security' in df.columns:
+                fig_pie = px.pie(
+                    df,
+                    values='Market Value',
+                    names='Security',
+                    title='Portfolio Allocation by Market Value',
+                    hole=0.3
+                )
+                fig_pie.update_traces(textposition='inside', textinfo='percent+label')
+                fig_pie.update_layout(height=350, showlegend=False)
+                st.plotly_chart(fig_pie, use_container_width=True)
+        
+        
+        with col3:
+            # Position Weights
+            if 'Position Weight' in df.columns and 'Security' in df.columns:
+                plot_df = df.sort_values('Position Weight', ascending=True)
+                fig_weights = px.bar(
+                    plot_df,
+                    x='Position Weight',
+                    y='Security',
+                    orientation='h',
+                    title='Position Weights (%)',
+                    color='Position Weight',
+                    color_continuous_scale='blues',
+                    labels={'Position Weight': 'Weight (%)'}
+                )
+                fig_weights.update_layout(height=350)
+                st.plotly_chart(fig_weights, use_container_width=True)
+        
+        # ================================================================
+        # SECTION 3: TIME SERIES CHARTS (STACKED)
+        # ================================================================
+        st.subheader("📉 Performance Over Time")
+        
+        if not history_df.empty:
+            # Portfolio Value Over Time
+            fig_value = go.Figure()
+            
+            fig_value.add_trace(go.Scatter(
+                x=history_df['date'],
+                y=history_df['total_investment'],
+                mode='lines',
+                name='Total Investment',
+                line=dict(color='blue', width=2)
+            ))
+            
+            fig_value.add_trace(go.Scatter(
+                x=history_df['date'],
+                y=history_df['total_market_value'],
+                mode='lines',
+                name='Market Value',
+                line=dict(color='green', width=2),
+                fill='tonexty',
+                fillcolor='rgba(0,255,0,0.1)' if history_df['total_market_value'].iloc[-1] > history_df['total_investment'].iloc[-1] else 'rgba(255,0,0,0.1)'
+            ))
+            
+            fig_value.update_layout(
+                title='Portfolio Value Over Time',
+                xaxis_title='Date',
+                yaxis_title='Value ($)',
+                hovermode='x unified',
+                height=350,
+                legend=dict(orientation="h", yanchor="bottom", y=1.02)
+            )
+            
+            st.plotly_chart(fig_value, use_container_width=True)
+            
+            # Cumulative Gains/Losses Over Time
+            history_df['cumulative_gains'] = history_df['total_market_value'] - history_df['total_investment']
+            
+            fig_gains = go.Figure()
+            
+            fig_gains.add_trace(go.Scatter(
+                x=history_df['date'],
+                y=history_df['cumulative_gains'],
+                mode='lines+markers',
+                name='Cumulative P/L',
+                line=dict(color='orange', width=3),
+                fill='tozeroy',
+                fillcolor='rgba(255,165,0,0.1)'
+            ))
+            
+            fig_gains.add_hline(y=0, line_dash="dash", line_color="gray", opacity=0.5)
+            
+            fig_gains.update_layout(
+                title='Cumulative Gains/Losses Over Time',
+                xaxis_title='Date',
+                yaxis_title='Gain/Loss ($)',
+                hovermode='x unified',
+                height=300
+            )
+            
+            st.plotly_chart(fig_gains, use_container_width=True)
+        else:
+            st.info("No historical data yet. Save snapshots to see time series charts.")
+        
+        # ================================================================
+        # SECTION 4: PORTFOLIO SUMMARY METRICS
+        # ================================================================
+        st.subheader("📊 Portfolio Summary")
+        
+        # First row of metrics
         col1, col2, col3, col4 = st.columns(4)
         
         with col1:
-            total_cost = df['Total Cost'].sum() if 'Total Cost' in df.columns else 0
-            st.metric("💰 Total Investment", f"${total_cost:,.2f}")
+            # Total Return
+            st.metric("Total Return", f"{total_return_pct:.1f}%", f"${total_pl:,.2f}")
         
         with col2:
-            total_market = df['Market Value'].sum() if 'Market Value' in df.columns else 0
-            delta = total_market - total_cost if total_cost != 0 else 0
-            st.metric("📈 Market Value", f"${total_market:,.2f}",
-                     delta=f"${delta:,.2f}")
+            # Period Return (from historical data)
+            if not history_df.empty and len(history_df) > 1:
+                period_return = history_df['total_market_value'].iloc[-1] - history_df['total_market_value'].iloc[0]
+                period_return_pct = (period_return / history_df['total_market_value'].iloc[0] * 100) if history_df['total_market_value'].iloc[0] != 0 else 0
+                st.metric("Period Return", f"{period_return_pct:.1f}%", f"${period_return:,.2f}")
+            else:
+                st.metric("Period Return", "N/A")
         
         with col3:
-            total_pl = df['Unrealized Gain / (Loss)'].sum() if 'Unrealized Gain / (Loss)' in df.columns else 0
-            pl_pct = (total_pl / total_cost * 100) if total_cost != 0 else 0
-            st.metric("💵 Unrealized P/L", f"${total_pl:,.2f}",
-                     delta=f"{pl_pct:.1f}%")
+            # Days Tracked
+            days_tracked = len(history_df) if not history_df.empty else 0
+            st.metric("Days Tracked", f"{days_tracked}")
         
         with col4:
-            if 'Unrealized Gain / (Loss)' in df.columns:
-                winners = len(df[df['Unrealized Gain / (Loss)'] > 0])
-                losers = len(df[df['Unrealized Gain / (Loss)'] < 0])
-                total = len(df)
-                win_rate = (winners/total*100) if total > 0 else 0
-                st.metric("📊 Win Rate", f"{win_rate:.1f}%",
-                         delta=f"{winners}W / {losers}L")
-            else:
-                st.metric("📊 Holdings", f"{len(df)} Securities")
+            # Win Rate
+            st.metric("Win Rate", f"{win_rate:.1f}%", f"{winners}W / {losers}L")
         
-        # Portfolio Table
+        # Second row - Top/Bottom Performers and Portfolio Stats
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.markdown("**📈 Top Performers**")
+            if 'Return %' in df.columns and 'Security' in df.columns:
+                top_3 = df.nlargest(3, 'Return %')[['Security', 'Return %']]
+                for i, (_, row) in enumerate(top_3.iterrows(), 1):
+                    st.write(f"{i}. {row['Security']}: {row['Return %']:.1f}%")
+            else:
+                st.write("No performance data")
+        
+        with col2:
+            st.markdown("**📉 Bottom Performers**")
+            if 'Return %' in df.columns and 'Security' in df.columns:
+                bottom_3 = df.nsmallest(3, 'Return %')[['Security', 'Return %']]
+                for i, (_, row) in enumerate(bottom_3.iterrows(), 1):
+                    st.write(f"{i}. {row['Security']}: {row['Return %']:.1f}%")
+            else:
+                st.write("No performance data")
+        
+        with col3:
+            st.markdown("**📊 Portfolio Stats**")
+            st.write(f"• Total Securities: {len(df)}")
+            if 'Return %' in df.columns:
+                st.write(f"• Avg Return: {df['Return %'].mean():.1f}%")
+                st.write(f"• Best Return: {df['Return %'].max():.1f}%")
+                st.write(f"• Worst Return: {df['Return %'].min():.1f}%")
+        
+        # ================================================================
+        # SECTION 5: CURRENT HOLDINGS TABLE WITH SEARCH
+        # ================================================================
         st.subheader("📋 Current Holdings")
         
         # Search filter
@@ -699,125 +965,20 @@ if uploaded_file is not None:
         else:
             st.dataframe(filtered_df, use_container_width=True, height=400)
         
-        # Simple Charts
-        if len(filtered_df) > 0 and 'Market Value' in filtered_df.columns:
-            st.subheader("📈 Visual Analytics")
-            
-            tab1, tab2 = st.tabs(["📊 Allocation", "📈 Performance"])
-            
-            with tab1:
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    # Portfolio Allocation Pie Chart
-                    fig_pie = px.pie(
-                        filtered_df, 
-                        values='Market Value', 
-                        names='Security' if 'Security' in filtered_df.columns else filtered_df.index,
-                        title='Portfolio Allocation by Market Value'
-                    )
-                    fig_pie.update_traces(textposition='inside', textinfo='percent+label')
-                    st.plotly_chart(fig_pie, use_container_width=True)
-                
-                with col2:
-                    if 'Position Weight' in filtered_df.columns:
-                        # Position Weights Bar Chart
-                        plot_df = filtered_df.copy()
-                        if 'Security' in plot_df.columns:
-                            plot_df = plot_df.sort_values('Position Weight', ascending=True)
-                            fig_weights = px.bar(
-                                plot_df,
-                                x='Position Weight',
-                                y='Security',
-                                orientation='h',
-                                title='Position Weights (%)',
-                                color='Return %' if 'Return %' in plot_df.columns else None,
-                                color_continuous_scale=['red', 'yellow', 'green']
-                            )
-                            fig_weights.update_layout(xaxis_title="Weight (%)")
-                            st.plotly_chart(fig_weights, use_container_width=True)
-            
-            with tab2:
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    if 'Return %' in filtered_df.columns and 'Security' in filtered_df.columns:
-                        # Returns Bar Chart
-                        plot_df = filtered_df.sort_values('Return %', ascending=True)
-                        fig_returns = px.bar(
-                            plot_df,
-                            x='Return %',
-                            y='Security',
-                            orientation='h',
-                            title='Returns by Security',
-                            color='Return %',
-                            color_continuous_scale=['red', 'yellow', 'green']
-                        )
-                        fig_returns.update_layout(xaxis_title="Return (%)")
-                        st.plotly_chart(fig_returns, use_container_width=True)
-                
-                with col2:
-                    if 'Unrealized Gain / (Loss)' in filtered_df.columns and 'Security' in filtered_df.columns:
-                        # Gain/Loss Bar Chart
-                        plot_df = filtered_df.sort_values('Unrealized Gain / (Loss)', ascending=True)
-                        fig_pl = px.bar(
-                            plot_df,
-                            x='Unrealized Gain / (Loss)',
-                            y='Security',
-                            orientation='h',
-                            title='Gain/Loss by Security ($)',
-                            color='Unrealized Gain / (Loss)',
-                            color_continuous_scale=['red', 'yellow', 'green']
-                        )
-                        fig_pl.update_layout(xaxis_title="Gain/Loss ($)")
-                        st.plotly_chart(fig_pl, use_container_width=True)
-        
-        # Summary Statistics
-        st.subheader("📊 Portfolio Summary")
-        
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            st.markdown("**📈 Top Performers**")
-            if 'Return %' in df.columns and 'Security' in df.columns:
-                top_3 = df.nlargest(3, 'Return %')[['Security', 'Return %']]
-                for _, row in top_3.iterrows():
-                    st.write(f"• {row['Security']}: {row['Return %']:.1f}%")
-            else:
-                st.write("No performance data")
-        
-        with col2:
-            st.markdown("**📉 Bottom Performers**")
-            if 'Return %' in df.columns and 'Security' in df.columns:
-                bottom_3 = df.nsmallest(3, 'Return %')[['Security', 'Return %']]
-                for _, row in bottom_3.iterrows():
-                    st.write(f"• {row['Security']}: {row['Return %']:.1f}%")
-            else:
-                st.write("No performance data")
-        
-        with col3:
-            st.markdown("**📊 Portfolio Stats**")
-            st.write(f"• Total Securities: {len(df)}")
-            if 'Return %' in df.columns:
-                st.write(f"• Avg Return: {df['Return %'].mean():.1f}%")
-                st.write(f"• Best Return: {df['Return %'].max():.1f}%")
-                st.write(f"• Worst Return: {df['Return %'].min():.1f}%")
-        
         # ================================================================
-        # SECURITY HISTORY SECTION
+        # SECTION 6: INDIVIDUAL SECURITY HISTORY (IN A TAB)
         # ================================================================
-        with st.expander("📈 View Individual Security History"):
+        st.subheader("🔍 Security Details")
+        
+        tab1, tab2 = st.tabs(["📈 Individual Security History", "📊 Security Comparison"])
+        
+        with tab1:
+            # Make sure display_security_history function is defined elsewhere in your code
             display_security_history(df, history_db)
         
-        # ================================================================
-        # HISTORY MANAGER SECTION
-        # ================================================================
-        if st.session_state.get('show_history_manager', False):
-            with st.expander("📚 History Manager", expanded=True):
-                manage_history(history_db)
-                if st.button("Close History Manager"):
-                    st.session_state.show_history_manager = False
-                    st.rerun()
+        with tab2:
+            st.info("Security comparison feature coming soon...")
+            # You can add comparison functionality here later
         
         # Download button
         csv = df.to_csv(index=False)
@@ -830,8 +991,7 @@ if uploaded_file is not None:
         
     except Exception as e:
         st.error(f"Error processing file: {str(e)}")
-        st.exception(e)
-        
+        st.exception(e)        
         # Troubleshooting section
         st.subheader("🔍 Troubleshooting")
         st.write("Please check that your file is a valid CSV or Excel file from Atrad.")
